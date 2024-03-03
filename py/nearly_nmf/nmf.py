@@ -186,7 +186,7 @@ def split_pos_neg(A: npt.ArrayLike):
 
 def nearly_NMF(X: npt.ArrayLike, V: npt.ArrayLike, H_start: npt.ArrayLike,
             W_start: npt.ArrayLike, n_iter: int = 500, update_H: bool = True,
-            update_W: bool = True, return_chi_2: bool = False,
+            update_W: bool = True, return_chi_2: bool = False, atol: float = 1e-5,
             verbose: bool = False, transpose: bool = False) ->  tuple[npt.NDArray, npt.NDArray]:
     """Fit NMF templates to noisy, possibly negative, data with weights using the "nearly-NMF" algorithm.
 
@@ -254,6 +254,7 @@ def nearly_NMF(X: npt.ArrayLike, V: npt.ArrayLike, H_start: npt.ArrayLike,
         c2 = xp.sum((xp.sqrt(V) * (X - recon)) ** 2)
         chi_2.append(c2)
     # Precomputing some values for efficiency
+    _H, _W = None, None
     V_X = V * X
     for i in range(n_iter):
         # H-step
@@ -261,13 +262,16 @@ def nearly_NMF(X: npt.ArrayLike, V: npt.ArrayLike, H_start: npt.ArrayLike,
             W_VX = W.T @ V_X
             W_VX_pos, W_VX_neg = split_pos_neg(W_VX)
 
+            _H = H.copy()
             H = H * (W_VX_pos) / (W.T @ (V * (W @ H)) + W_VX_neg)
             H = xp.nan_to_num(H, nan=nan_eps, posinf=nan_eps)
+            
         # W-step
         if update_W:
             V_XH = V_X @ H.T
             V_XH_pos, V_XH_neg = split_pos_neg(V_XH)
 
+            _W = W.copy()
             W = W * (V_XH_pos) / ((V * (W @ H)) @ H.T + V_XH_neg)
             W = xp.nan_to_num(W, nan=nan_eps, posinf=nan_eps)
 
@@ -276,7 +280,11 @@ def nearly_NMF(X: npt.ArrayLike, V: npt.ArrayLike, H_start: npt.ArrayLike,
             c2 = xp.sum((xp.sqrt(V) * (X - recon)) ** 2)
             chi_2.append(c2)
             if verbose & (i % 10 == 0):
-                print(i, c2)
+                print(f'iteration {i} chi2={c2:.0f}')
+
+        if _H is not None and _W is not None:
+            if np.max(np.abs(H - _H)) < atol and np.max(np.abs(W - _W)) < atol:
+                break
 
     # Transposing back for returns
     if transpose:
